@@ -31,15 +31,11 @@ h1 {
 /* NEW styles for our emoji icons */
 .train-icon {
   position: absolute;
-  font-size: 24px; /* Larger size for the emoji */
-  transition: left 2s linear, top 2s linear; 
+  font-size: 24px;
+  transition: left 1.5s linear, top 1.5s linear; /* Made transition slightly faster */
   z-index: 10;
-  
-  /* Centering the icon */
-  transform: translate(-50%, -50%);
-  text-shadow: 0px 0px 4px rgba(0,0,0,0.5); /* Adds a little shadow to make it pop */
+  text-shadow: 0px 0px 4px rgba(0,0,0,0.5);
 }
-
 .train-label {
   position: absolute;
   background-color: rgba(0, 0, 0, 0.6);
@@ -131,3 +127,80 @@ h1 {
 .explain-button:hover {
   background-color: #2980b9;
 }
+/* --- Styles for Timetable Editor --- */
+
+.timetable-container {
+  max-width: 1200px;
+  margin: 40px auto;
+  padding: 10px;
+}
+
+.timetable-container h3 {
+  color: #34495e;
+  text-align: left;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+}
+
+.schedule-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.schedule-form input,
+.schedule-form select,
+.schedule-form button {
+  padding: 10px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+}
+
+.schedule-form button {
+  background-color: #27ae60;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  border: none;
+}
+
+.schedule-form button:hover {
+  background-color: #229954;
+}
+
+.schedule-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.schedule-table th,
+.schedule-table td {
+  padding: 12px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.schedule-table th {
+  background-color: #f4f7f6;
+}
+.delete-button {
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.delete-button:hover {
+  background-color: #c0392b;
+}
+.decision-box { background-color: #fffbe6; padding: 10px; border-radius: 5px; margin-top: 10px; border: 1px solid #ffe58f; }
+.decision-box p { font-weight: bold; }
+.accept-button { background-color: #27ae60; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; margin-right: 10px; }
+.reject-button { background-color: #e74c3c; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; }
+.train-card.status-AWAITING_DECISION { border-left-color: #f39c12; /* Orange for waiting */ }
