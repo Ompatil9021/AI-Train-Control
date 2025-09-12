@@ -4,13 +4,13 @@ import React, { useState, useEffect } from 'react';
 import TrainMap from './TrainMap';
 import TimetableEditor from './components/TimetableEditor';
 import AuthPage from './components/AuthPage';
-import ProfilePage from './components/ProfilePage';   // ✅ Import ProfilePage
+import ProfilePage from './components/ProfilePage';
 import './App.css';
 
 const getTrainIcon = (trainType) => {
   switch (trainType) {
     case 'EXPRESS': return '🚆';
-    case 'GOODS': return '🚇';
+    case 'GOODS': return '🚂';
     default: return '🚃';
   }
 };
@@ -19,6 +19,9 @@ function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('dashboard'); // 'dashboard' | 'profile' | 'history'
   const [simulationState, setSimulationState] = useState({ trains: [], simulation_time: "00:00:00" });
+
+  // NEW: store delay input values per-train in React state (prevents race with simulationState refresh)
+  const [delayInputs, setDelayInputs] = useState({}); // { [trainId]: "2" }
 
   // Fetch simulation state only if a user is logged in
   useEffect(() => {
@@ -99,6 +102,11 @@ function App() {
     return `${mins}m ${secs < 10 ? '0' : ''}${secs}s`;
   };
 
+  // helper to update delayInputs map
+  const setDelayForTrain = (trainId, value) => {
+    setDelayInputs(prev => ({ ...prev, [trainId]: value }));
+  };
+
   // --- Main Render Logic ---
   if (!user) {
     return <AuthPage onLoginSuccess={setUser} />;
@@ -175,19 +183,25 @@ function App() {
                   type="number" 
                   min="1" 
                   placeholder="Delay (min)" 
-                  onChange={(e) => train.delayInput = e.target.value} 
+                  value={delayInputs[train.id] || ''} 
+                  onChange={(e) => setDelayForTrain(train.id, e.target.value)} 
                   className="delay-input"
                 />
                 <button 
                   onClick={() => {
-                    const delayMinutes = parseInt(train.delayInput) || 5;
+                    const delayMinutes = parseInt(delayInputs[train.id]) || 5;
+                    // Send minutes converted to seconds
+                    const delaySeconds = delayMinutes * 60;
                     fetch('http://127.0.0.1:5001/api/simulate_delay', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ train_id: train.id, delay: delayMinutes * 60 })
+                      body: JSON.stringify({ train_id: train.id, delay: delaySeconds })
                     })
                     .then(res => res.json())
-                    .then(data => alert(data.message))
+                    .then(data => {
+                      if (data && data.message) alert(data.message);
+                      else alert('Delay injected.');
+                    })
                     .catch(err => console.error("Error injecting delay:", err));
                   }}
                   className="delay-button"

@@ -1,6 +1,4 @@
 # backend/app.py
-from train_logic import LOOP_LINES  # ✅ add this at top with other imports
-
 import sqlite3
 import threading
 from flask import Flask, jsonify, request
@@ -8,6 +6,7 @@ from flask_cors import CORS
 # --- Import our classes and config from the new logic file ---
 from train_logic import Simulation, init_db, DATABASE_FILE
 import ollama  # Needed for /api/explain
+from train_logic import LOOP_LINES  # ✅ add this at top with other imports
 
 # Initialize Flask App
 app = Flask(__name__)
@@ -30,9 +29,34 @@ def get_schedules():
 @app.route('/api/simulate_delay', methods=['POST'])
 def simulate_delay():
     global simulation
-    data = request.get_json()
+    data = request.get_json() or {}
     train_id = data.get('train_id')
-    delay_seconds = int(data.get('delay', 300))  # default 5 minutes
+
+    # ---- Robust parsing of incoming delay ----
+    raw_delay = data.get('delay', None)
+    if raw_delay is None:
+        # No value provided — default 5 minutes
+        delay_seconds = 300
+        debug_note = "no delay provided -> default 300s"
+    else:
+        # Try to parse integer; if parse fails use default
+        try:
+            parsed = int(raw_delay)
+        except Exception:
+            parsed = None
+
+        if parsed is None:
+            delay_seconds = 300
+            debug_note = f"could not parse delay='{raw_delay}' -> default 300s"
+        else:
+            # Heuristic: treat values <= 60 as minutes (user-friendly),
+            # treat larger values as seconds (backward compatible).
+            if parsed <= 60:
+                delay_seconds = parsed * 60
+                debug_note = f"parsed {parsed} as minutes -> {delay_seconds}s"
+            else:
+                delay_seconds = parsed
+                debug_note = f"parsed {parsed} as seconds -> {delay_seconds}s"
 
     if not simulation:
         return jsonify({"success": False, "message": "Simulation not running."}), 400
@@ -42,62 +66,93 @@ def simulate_delay():
         if not train:
             return jsonify({"success": False, "message": "Train not found."}), 404
 
-        # --- Find nearest loop line ahead ---
+        # Find nearest loop line ahead of current position
         nearest_loop = None
         for name, pos in sorted(LOOP_LINES.items(), key=lambda x: x[1]):
-            if pos > train.position_km:  # only consider loops ahead of current position
+            if pos > train.position_km:
                 nearest_loop = pos
                 break
 
-        if nearest_loop:
-            # Send train to loop (same as AI plan accept)
+        # helper to clear conflicts related to this train
+        def clear_conflicts_for(train_obj):
+            to_remove = [cid for cid in list(simulation.conflicts_handled)
+                         if cid.endswith(f"-{train_obj.id}") or cid.startswith(f"{train_obj.id}-")]
+            for cid in to_remove:
+                if cid in simulation.conflicts_handled:
+                    simulation.conflicts_handled.remove(cid)
+
+        # Log debug info about what was received
+        print(f"--- SIMULATE_DELAY called for train={train_id}, raw_delay={raw_delay}, {debug_note} ---")
+
+        # --- Branch: nearest loop found ---
+        if nearest_loop is not None:
+            # Order train to reach loop and halt
             train.status = "EN_ROUTE_TO_LOOP"
             train.maneuver_target_km = nearest_loop
+            train.speed_kmh = train.original_speed  # ensure it can travel to loop
             simulation.log_decision(
-                f"DELAY INJECTED: Train {train.name} ordered to nearest loop at {nearest_loop} km for {delay_seconds//60} min."
+                f"DELAY INJECTED: Train {train.name} ordered to nearest loop at {nearest_loop:.1f} km for {delay_seconds//60} min. (raw={raw_delay})"
             )
+            print(f"--- [DELAY INJECTED] {train.id} -> loop {nearest_loop:.1f} for {delay_seconds}s (raw={raw_delay}) ---")
 
-            # Schedule resume after delay
-            def resume_train():
+            def resume_train_at_loop():
                 with simulation.lock:
-                    if train.status in ["HALTED_IN_LOOP", "HALTED"]:
-                        train.status = "ON_SCHEDULE"
-                        train.speed_kmh = train.original_speed
-                        train.maneuver_target_km = None
-                        train.halted_by = None  # ✅ ensure no "blocked by" remains
-                        simulation.log_decision(
-                            f"Train {train.name} resumed after injected delay at loop {nearest_loop} km."
-                    )
+                    print(f"--- [RESUME CALLBACK] triggered for train {train.id}; status currently={train.status} pos={train.position_km:.2f} ---")
+                    clear_conflicts_for(train)
+                    # If en-route and not exactly at loop, snap to loop so it doesn't get stuck on boundary
+                    try:
+                        if train.position_km < nearest_loop and train.status in ["EN_ROUTE_TO_LOOP", "HALTED_IN_LOOP"]:
+                            train.position_km = float(nearest_loop)
+                    except Exception:
+                        pass
 
+                    train.status = "ON_SCHEDULE"
+                    train.speed_kmh = train.original_speed
+                    train.maneuver_target_km = None
+                    train.halted_by = None
+                    train.time_in_adaptive_cruise = 0
 
-            threading.Timer(delay_seconds, resume_train).start()
+                    simulation.log_decision(f"Train {train.name} resumed after injected delay at loop {nearest_loop:.1f} km.")
+                    print(f"--- [RESUME] train {train.id} resumed after injected delay ---")
 
-            return jsonify({
-                "success": True,
-                "message": f"Train {train_id} delayed {delay_seconds//60} min at nearest loop ({nearest_loop} km)."
-            })
+            t = threading.Timer(delay_seconds, resume_train_at_loop)
+            t.daemon = True
+            t.start()
+
+            return jsonify({"success": True,
+                            "message": f"Train {train_id} delayed {delay_seconds//60} min at nearest loop ({nearest_loop:.1f} km).",
+                            "debug": debug_note})
+
         else:
-            # No loop ahead → halt in place (fallback)
+            # No loop ahead -> halt in place
             train.status = "HALTED"
             train.speed_kmh = 0
+            train.halted_by = None
             simulation.log_decision(
-                f"DELAY INJECTED: Train {train.name} halted in place (no loop ahead) for {delay_seconds//60} min."
+                f"DELAY INJECTED: Train {train.name} halted in place for {delay_seconds//60} min (no loop ahead). (raw={raw_delay})"
             )
+            print(f"--- [DELAY INJECTED] {train.id} halted in place for {delay_seconds}s (raw={raw_delay}) ---")
 
-            def resume_train():
+            def resume_train_in_place():
                 with simulation.lock:
-                    if train.status == "HALTED":
-                        train.status = "ON_SCHEDULE"
-                        train.speed_kmh = train.original_speed
-                        simulation.log_decision(
-                            f"Train {train.name} resumed after injected delay (halted in place)."
-                        )
+                    print(f"--- [RESUME CALLBACK] triggered for train {train.id} (was halted in place); status now={train.status} pos={train.position_km:.2f} ---")
+                    clear_conflicts_for(train)
+                    train.status = "ON_SCHEDULE"
+                    train.speed_kmh = train.original_speed
+                    train.halted_by = None
+                    train.time_in_adaptive_cruise = 0
+                    train.maneuver_target_km = None
+                    simulation.log_decision(f"Train {train.name} resumed after injected in-place delay.")
+                    print(f"--- [RESUME] train {train.id} resumed after in-place delay ---")
 
-            threading.Timer(delay_seconds, resume_train).start()
-            return jsonify({
-                "success": True,
-                "message": f"Train {train_id} delayed {delay_seconds//60} min (halted in place, no loop available)."
-            })
+            t2 = threading.Timer(delay_seconds, resume_train_in_place)
+            t2.daemon = True
+            t2.start()
+
+            return jsonify({"success": True,
+                            "message": f"Train {train_id} delayed {delay_seconds//60} min (halted in place).",
+                            "debug": debug_note})
+
 
 @app.route('/api/add_schedule', methods=['POST'])
 def add_schedule():

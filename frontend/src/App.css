@@ -353,17 +353,33 @@ h1 {
 
 .history-button:hover {
   background: #0056b3;
-}
+/* ✅ Delay Injection Styles */
 .delay-box {
   margin-top: 8px;
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
 }
-
+}
 .delay-input {
   width: 80px;
-  padding: 4px;
+  padding: 6px;
   border: 1px solid #ccc;
   border-radius: 4px;
+  font-size: 14px;
+}
+
+.delay-button {
+  background: #ff9800;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s ease-in-out;
+}
+
+.delay-button:hover {
+  background: #e68900;
 }
