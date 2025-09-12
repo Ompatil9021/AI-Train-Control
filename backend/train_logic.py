@@ -5,7 +5,7 @@ import threading
 import os
 import json
 import sqlite3
-import ollama 
+import ollama
 
 DATABASE_FILE = 'database.db'
 ROUTE_LENGTH_KM = 192.0
@@ -42,18 +42,21 @@ class Train:
         self.speed_kmh = speed; self.original_speed = speed; self.position_km = float(start_position)
         self.status = "ON_SCHEDULE"; self.halted_by = None; self.maneuver_target_km = None
         self.time_in_adaptive_cruise = 0; self.proposed_plan = None
-    
+
     def move(self, delta_time_hours, simulation_instance):
         if self.status in ["HALTED", "ARRIVED", "HALTED_IN_LOOP"]: return
         potential_new_position = self.position_km + (self.speed_kmh * delta_time_hours)
         if self.status == "EN_ROUTE_TO_LOOP" and self.maneuver_target_km is not None:
             if potential_new_position >= self.maneuver_target_km:
                 self.position_km = self.maneuver_target_km; self.status = "HALTED_IN_LOOP"; self.maneuver_target_km = None
+                simulation_instance.log_decision(f"Train {self.name} reached loop line at {self.position_km:.1f} km and halted in loop.")
                 print(f"--- ACTION: Train {self.name} has reached the loop line and is now halting. ---"); return
         if potential_new_position >= ROUTE_LENGTH_KM:
             self.position_km = ROUTE_LENGTH_KM; self.speed_kmh = 0; self.status = "ARRIVED"
+            simulation_instance.log_decision(f"ARRIVAL: Train {self.name} arrived at destination.")
             print(f"--- [Time {simulation_instance.get_formatted_time()}] ARRIVED: Train {self.name} ---")
-        else: self.position_km = potential_new_position
+        else:
+            self.position_km = potential_new_position
 
     def get_upcoming_stations(self):
         upcoming = []
@@ -78,14 +81,29 @@ class Simulation:
         self.trains = {}; self.simulation_time_seconds = 0; self.time_scale = 60
         self.lock = threading.Lock(); self.schedule = self.load_schedule_from_db()
         self.spawned_train_ids = set(); self.conflicts_handled = set()
+        self.decision_history = []   # store human/AI decisions and important events
+
+    def log_decision(self, message):
+        """Record a timestamped message in the decision history and print it."""
+        time_str = self.get_formatted_time()
+        entry = f"[{time_str}] {message}"
+        print(entry)
+        self.decision_history.append(entry)
+        # Keep the history bounded (last 200)
+        if len(self.decision_history) > 200:
+            self.decision_history.pop(0)
+
+    def get_decision_history(self):
+        with self.lock:
+            return list(self.decision_history)
 
     def load_schedule_from_db(self):
         conn = sqlite3.connect(DATABASE_FILE); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
         cursor.execute("SELECT * FROM schedules ORDER BY departure_time_seconds ASC"); rows = cursor.fetchall(); conn.close()
         return [dict(row) for row in rows]
-    
+
     def resolve_conflict_with_ai(self, behind_train, ahead_train, conflict_id):
-        print(f"\n--- Critical conflict! Asking LOCAL AI for advice... ---\n")
+        self.log_decision(f"Critical conflict detected between {behind_train.name} (behind) and {ahead_train.name} (ahead). Requesting AI advice.")
         prompt = f"""Analyze: High-priority '{behind_train.name}' is critically close to low-priority '{ahead_train.name}'. Loop lines are at: {json.dumps(LOOP_LINES)}. Advise which train should wait. Respond in JSON with "train_id_to_wait"."""
         try:
             response = ollama.chat(model='phi3:latest', messages=[{'role': 'user', 'content': prompt}], format='json')
@@ -94,8 +112,11 @@ class Simulation:
             with self.lock:
                 train_to_wait = self.trains.get(advice.get("train_id_to_wait"))
                 if not train_to_wait or train_to_wait.id != ahead_train.id:
-                    print(f"--- AI provided illogical advice. Overriding. ---"); train_to_wait = ahead_train
-                
+                    # AI returned something unexpected; override to ahead_train (safer default)
+                    self.log_decision("AI provided illogical or unexpected advice; overriding and selecting ahead-train as waiter.")
+                    print(f"--- AI provided illogical advice. Overriding. ---")
+                    train_to_wait = ahead_train
+
                 best_loop_pos = next((pos for name, pos in LOOP_LINES.items() if pos > train_to_wait.position_km), None)
                 plan = {}
                 if best_loop_pos:
@@ -103,32 +124,39 @@ class Simulation:
                     time_passer = (best_loop_pos - behind_train.position_km) / behind_train.speed_kmh if behind_train.speed_kmh > 0 else float('inf')
                     if time_waiter < time_passer:
                         plan = {"action": "MOVE_TO_LOOP_AND_HALT", "train_id": train_to_wait.id, "location_km": best_loop_pos, "caused_by": behind_train.id}
+                        self.log_decision(f"AI proposed: Route {train_to_wait.name} to loop at {best_loop_pos:.1f} km to let {behind_train.name} pass.")
                         print(f"--- Proposing a SAFE plan: Route {train_to_wait.name} to loop at {best_loop_pos}km. ---")
                     else:
                         plan = {"action": "HALT", "train_id": train_to_wait.id, "reason": "Maneuver unsafe", "caused_by": behind_train.id}
+                        self.log_decision(f"AI fallback proposed immediate HALT for {train_to_wait.name} because maneuver unsafe.")
                         print(f"--- Proposing an UNSAFE fallback: HALT {train_to_wait.name} NOW. ---")
                 else:
                     plan = {"action": "HALT", "train_id": train_to_wait.id, "reason": "No loop lines ahead", "caused_by": behind_train.id}
+                    self.log_decision(f"AI fallback proposed HALT for {train_to_wait.name}: no loop lines ahead.")
                     print(f"--- No loop lines ahead. Proposing fallback: HALT {train_to_wait.name} NOW. ---")
 
                 train_to_wait.proposed_plan = plan
                 train_to_wait.status = "AWAITING_DECISION"
         except Exception as e:
-            print(f"!!! ERROR in AI resolution: {e} !!!")
+            error_msg = f"ERROR in AI resolution: {e}"
+            print(f"!!! {error_msg} !!!")
+            self.log_decision(error_msg)
             with self.lock:
-                if conflict_id in self.conflicts_handled: self.conflicts_handled.remove(conflict_id)
+                if conflict_id in self.conflicts_handled:
+                    self.conflicts_handled.remove(conflict_id)
 
     def check_for_resolved_conflicts(self):
         for train in list(self.trains.values()):
             if train.status in ["HALTED_IN_LOOP", "HALTED"] and train.halted_by:
                 halting_train = self.trains.get(train.halted_by)
                 if halting_train and halting_train.position_km > train.position_km + 5:
+                    self.log_decision(f"CONFLICT RESOLVED: Restarting {train.name} after {halting_train.name} moved clear.")
                     print(f"--- CONFLICT RESOLVED: Restarting train {train.name}. ---")
                     train.status = "ON_SCHEDULE"; train.speed_kmh = train.original_speed; train.halted_by = None
                     train.maneuver_target_km = train.position_km
                     conflict_id = f"{halting_train.id}-{train.id}"
                     if conflict_id in self.conflicts_handled: self.conflicts_handled.remove(conflict_id)
-    
+
     def detect_conflicts(self):
         train_list = list(self.trains.values())
         currently_cruising_trains = set()
@@ -151,12 +179,14 @@ class Simulation:
                         currently_cruising_trains.add(behind_train.id)
                     elif 15 > distance > 5:
                         if behind_train.status != "ADAPTIVE_CRUISE":
+                            self.log_decision(f"{behind_train.name} entering ADAPTIVE_CRUISE behind {ahead_train.name}.")
                             print(f"--- ACTION: {behind_train.name} entering ADAPTIVE_CRUISE. ---")
                             behind_train.status = "ADAPTIVE_CRUISE"
                         behind_train.speed_kmh = ahead_train.speed_kmh
                         currently_cruising_trains.add(behind_train.id)
         for train in train_list:
             if train.status == "ADAPTIVE_CRUISE" and train.id not in currently_cruising_trains:
+                self.log_decision(f"{train.name} disengaging ADAPTIVE_CRUISE; resuming scheduled speed.")
                 print(f"--- ACTION: {train.name} disengaging adaptive cruise. ---")
                 train.status = "ON_SCHEDULE"; train.speed_kmh = train.original_speed
 
@@ -169,8 +199,9 @@ class Simulation:
                     priority=train_data["priority"], speed=train_data["speed"]
                 )
                 self.trains[train_data["id"]] = new_train
+                self.log_decision(f"SPAWNED: Train {new_train.name} (id: {new_train.id}) at position {new_train.position_km:.1f} km.")
                 print(f"--- [Time {self.get_formatted_time()}] SPAWNED: Train {new_train.name} ---")
-    
+
     def update(self):
         while True:
             with self.lock:
@@ -182,10 +213,10 @@ class Simulation:
                     else: train.time_in_adaptive_cruise = 0
                 self.check_for_resolved_conflicts(); self.detect_conflicts(); print(self.get_state_string())
             time.sleep(1)
-            
+
     def get_formatted_time(self):
         secs=int(self.simulation_time_seconds); mins,secs=divmod(secs,60); hours,mins=divmod(mins,60); return f"{hours:02d}:{mins:02d}:{secs:02d}"
-    
+
     def get_state_string(self):
         time_str=self.get_formatted_time(); state_str=f"--- Simulation Time: {time_str} ---"
         if not self.trains: state_str += "\nNo trains currently on the track."
@@ -193,7 +224,6 @@ class Simulation:
             for train in self.trains.values():
                 state_str += f"\n  > {train.name} ({train.id}): Pos={train.position_km:.2f} km, Status={train.status}"
         return state_str
-        
-    # --- THIS IS THE MISSING FUNCTION THAT NEEDS TO BE ADDED BACK ---
+
     def get_simulation_state_for_api(self):
         with self.lock: return {"simulation_time": self.get_formatted_time(), "trains": [train.to_dict() for train in self.trains.values()]}

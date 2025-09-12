@@ -1,9 +1,10 @@
 // frontend/src/App.js
-
+import DecisionHistory from './components/DecisionHistory';
 import React, { useState, useEffect } from 'react';
 import TrainMap from './TrainMap';
 import TimetableEditor from './components/TimetableEditor';
-import AuthPage from './components/AuthPage'; // NEW: Import the authentication page
+import AuthPage from './components/AuthPage';
+import ProfilePage from './components/ProfilePage';   // ✅ Import ProfilePage
 import './App.css';
 
 const getTrainIcon = (trainType) => {
@@ -15,14 +16,13 @@ const getTrainIcon = (trainType) => {
 };
 
 function App() {
-  // --- NEW: State for managing the logged-in user ---
-  const [user, setUser] = useState(null); 
+  const [user, setUser] = useState(null);
+  const [view, setView] = useState('dashboard'); // 'dashboard' | 'profile'
   const [simulationState, setSimulationState] = useState({ trains: [], simulation_time: "00:00:00" });
 
-  // --- UPDATED: Only fetch data if a user is logged in ---
+  // Fetch simulation state only if a user is logged in
   useEffect(() => {
-    if (!user) return; // Don't do anything if we are not logged in
-
+    if (!user) return;
     const intervalId = setInterval(() => {
       fetch('http://127.0.0.1:5001/api/get_simulation_state')
         .then(response => response.json())
@@ -30,10 +30,9 @@ function App() {
         .catch(error => console.error("Error fetching simulation state:", error));
     }, 1500);
     return () => clearInterval(intervalId);
-  }, [user]); // This effect now depends on the 'user' state
+  }, [user]);
 
   const handleExplainClick = (haltedTrain) => {
-    // This function is unchanged
     const causingTrain = simulationState.trains.find(t => t.id === haltedTrain.halted_by);
     if (!causingTrain) {
       alert("Conflict details not available to generate explanation.");
@@ -46,14 +45,13 @@ function App() {
     })
     .then(response => response.json())
     .then(data => {
-      if (data.explanation) { alert(data.explanation); } 
+      if (data.explanation) { alert(data.explanation); }
       else { alert("Sorry, could not get an explanation from the AI."); }
     })
     .catch(error => console.error("Error fetching explanation:", error));
   };
 
   const handleDecision = (trainId, decision) => {
-    // This function is unchanged
     fetch('http://127.0.0.1:5001/api/respond_to_decision', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -63,71 +61,81 @@ function App() {
   };
 
   const getTrainPosition = (train) => {
-    // This function is unchanged
-    const SVG_WIDTH = 1400; const TRACK_START_X = 210; const TRACK_END_X = 1310;
-    const ROUTE_LENGTH_KM = 192; const MAIN_TRACK_Y = 151; const LOOP_TRACK_Y = 121;
+    const SVG_WIDTH = 1400, TRACK_START_X = 210, TRACK_END_X = 1310;
+    const ROUTE_LENGTH_KM = 192, MAIN_TRACK_Y = 151, LOOP_TRACK_Y = 121;
     const MANEUVER_DISTANCE_KM = 2.0;
     let percTraveled = train.position_km / ROUTE_LENGTH_KM;
-    if (percTraveled > 1) percTraveled = 1; if (percTraveled < 0) percTraveled = 0;
+    if (percTraveled > 1) percTraveled = 1;
+    if (percTraveled < 0) percTraveled = 0;
     const trackWidthSvg = TRACK_END_X - TRACK_START_X;
     const trainPosSvg = TRACK_START_X + (percTraveled * trackWidthSvg);
     const finalXPerc = (trainPosSvg / SVG_WIDTH) * 100;
     let finalYPos = MAIN_TRACK_Y;
     const targetKm = train.maneuver_target_km;
     if ((train.status === 'EN_ROUTE_TO_LOOP' || train.status === 'HALTED_IN_LOOP') && targetKm) {
-        const maneuverStartKm = targetKm - (MANEUVER_DISTANCE_KM / 2);
-        if (train.position_km >= maneuverStartKm && train.position_km < targetKm) {
-            const progress = (train.position_km - maneuverStartKm) / (MANEUVER_DISTANCE_KM / 2);
-            finalYPos = MAIN_TRACK_Y - (progress * (MAIN_TRACK_Y - LOOP_TRACK_Y));
-        } else if (train.position_km >= targetKm) {
-            finalYPos = LOOP_TRACK_Y;
-        }
+      const maneuverStartKm = targetKm - (MANEUVER_DISTANCE_KM / 2);
+      if (train.position_km >= maneuverStartKm && train.position_km < targetKm) {
+        const progress = (train.position_km - maneuverStartKm) / (MANEUVER_DISTANCE_KM / 2);
+        finalYPos = MAIN_TRACK_Y - (progress * (MAIN_TRACK_Y - LOOP_TRACK_Y));
+      } else if (train.position_km >= targetKm) {
+        finalYPos = LOOP_TRACK_Y;
+      }
     } else if (train.halted_by === null && targetKm) {
-        const rejoinEndKm = targetKm + (MANEUVER_DISTANCE_KM / 2);
-        if (train.position_km > targetKm && train.position_km <= rejoinEndKm) {
-            const progress = (train.position_km - targetKm) / (MANEUVER_DISTANCE_KM / 2);
-            finalYPos = LOOP_TRACK_Y + (progress * (MAIN_TRACK_Y - LOOP_TRACK_Y));
-        } else if (train.position_km <= targetKm) {
-            finalYPos = LOOP_TRACK_Y;
-        }
+      const rejoinEndKm = targetKm + (MANEUVER_DISTANCE_KM / 2);
+      if (train.position_km > targetKm && train.position_km <= rejoinEndKm) {
+        const progress = (train.position_km - targetKm) / (MANEUVER_DISTANCE_KM / 2);
+        finalYPos = LOOP_TRACK_Y + (progress * (MAIN_TRACK_Y - LOOP_TRACK_Y));
+      } else if (train.position_km <= targetKm) {
+        finalYPos = LOOP_TRACK_Y;
+      }
     }
     return { left: `${finalXPerc}%`, top: `${finalYPos}px`, transform: `translate(-50%, -50%)` };
   };
 
   const formatEta = (seconds) => {
-    // This function is unchanged
-    if (seconds === null || seconds < 0) { return "N/A"; }
+    if (seconds === null || seconds < 0) return "N/A";
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}m ${secs < 10 ? '0' : ''}${secs}s`;
   };
 
-  // --- NEW: Main Render Logic ---
-  // If no user is logged in, show the AuthPage component.
-  // We pass the 'setUser' function to it, so it can tell App.js when a login is successful.
+  // --- Main Render Logic ---
   if (!user) {
     return <AuthPage onLoginSuccess={setUser} />;
   }
 
-  // If a user IS logged in, show the main dashboard.
+  // ✅ Profile page view
+  if (view === 'profile') {
+    return <ProfilePage user={user} onBack={() => setView('dashboard')} />;
+  }
+  if (view === 'history') {
+  return <DecisionHistory onClose={() => setView('dashboard')} />;
+}
+
+  // ✅ Dashboard view
   return (
     <div className="App">
-      {/* NEW: Header with user info and Logout button */}
       <div className="header">
         <h1>AI Train Traffic Control</h1>
         <div className="user-info">
           Logged in as: <strong>{user.username}</strong> ({user.role})
+          
+          <button onClick={() => setView('profile')} className="profile-button">Profile</button>
+          <button onClick={() => setView('history')} className="history-button">Decision History</button>
           <button onClick={() => setUser(null)} className="logout-button">Logout</button>
         </div>
       </div>
-      <h2>Simulation Time: {simulationState.simulation_time}</h2>
       
+
+
+      <h2>Simulation Time: {simulationState.simulation_time}</h2>
+
       <div className="dashboard">
         <TrainMap />
         {simulationState.trains.map(train => (
           <div 
-            key={train.id} 
-            className="train-icon" 
+            key={train.id}
+            className="train-icon"
             style={getTrainPosition(train)}
             title={`${train.name} (${train.id}) - Status: ${train.status}`}
           >
@@ -137,7 +145,6 @@ function App() {
         ))}
       </div>
 
-      {/* FIX: Corrected the structure here */}
       <div className="train-list-container">
         <h3>Live Train Status</h3>
         <div className="train-cards-grid">
@@ -145,7 +152,7 @@ function App() {
             <div key={train.id} className={`train-card type-${train.type} status-${train.status}`}>
               <h4>{getTrainIcon(train.type)} {train.name} ({train.id})</h4>
               <p><strong>Status:</strong> {train.status.replace(/_/g, ' ')}</p>
-              
+
               {train.status === 'AWAITING_DECISION' && train.proposed_plan ? (
                 <div className="decision-box">
                   <p><strong>AI Proposal:</strong> {train.proposed_plan.action.replace(/_/g, ' ')} at {train.proposed_plan.location_km}km</p>
@@ -159,6 +166,7 @@ function App() {
                   <p><strong>ETA:</strong> {formatEta(train.eta_next_station)}</p>
                 </>
               )}
+
               {(train.status === 'HALTED' || train.status === 'HALTED_IN_LOOP') && (
                 <button onClick={() => handleExplainClick(train)} className="explain-button">
                   Explain Why?
@@ -169,7 +177,6 @@ function App() {
         </div>
       </div>
 
-      {/* NEW: Only show the TimetableEditor if the logged-in user's role is 'admin' */}
       {user && user.role === 'admin' && <TimetableEditor />}
     </div>
   );

@@ -285,3 +285,72 @@ h1 {
   border-radius: 5px;
   cursor: pointer;
 }
+/* --- Styles for Profile Page --- */
+.profile-button { margin-left: 15px; padding: 8px 12px; background-color: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; }
+.profile-container { max-width: 800px; margin: 20px auto; padding: 20px; }
+.back-button { float: left; margin-bottom: 20px; background: none; border: 1px solid #ccc; padding: 8px 15px; border-radius: 5px; cursor: pointer; }
+.profile-card { background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); clear: both; }
+.admin-view { margin-top: 40px; }
+.user-table { width: 100%; border-collapse: collapse; text-align: left; }
+.user-table th, .user-table td { padding: 12px; border-bottom: 1px solid #e0e0e0; }
+.user-table th { background-color: #f4f7f6; }
+
+/* Decision History Styles */
+.history-container {
+  max-width: 700px;
+  margin: 20px auto;
+  padding: 20px;
+  background: #ffffff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.history-list {
+  list-style: none;
+  padding: 0;
+  margin-top: 15px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.history-list li {
+  background: #f9f9f9;
+  padding: 10px;
+  margin: 6px 0;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 14px;
+}
+
+.close-button {
+  background: #d9534f;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.close-button:hover {
+  background: #c9302c;
+}
+
+.history-button {
+  margin-left: 10px;
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.history-button:hover {
+  background: #0056b3;
+}
