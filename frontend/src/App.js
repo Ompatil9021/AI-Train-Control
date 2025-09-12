@@ -9,15 +9,15 @@ import './App.css';
 
 const getTrainIcon = (trainType) => {
   switch (trainType) {
-    case 'EXPRESS': return '🚄';
-    case 'GOODS': return '🚂';
+    case 'EXPRESS': return '🚆';
+    case 'GOODS': return '🚇';
     default: return '🚃';
   }
 };
 
 function App() {
   const [user, setUser] = useState(null);
-  const [view, setView] = useState('dashboard'); // 'dashboard' | 'profile'
+  const [view, setView] = useState('dashboard'); // 'dashboard' | 'profile' | 'history'
   const [simulationState, setSimulationState] = useState({ trains: [], simulation_time: "00:00:00" });
 
   // Fetch simulation state only if a user is logged in
@@ -104,13 +104,12 @@ function App() {
     return <AuthPage onLoginSuccess={setUser} />;
   }
 
-  // ✅ Profile page view
   if (view === 'profile') {
     return <ProfilePage user={user} onBack={() => setView('dashboard')} />;
   }
   if (view === 'history') {
-  return <DecisionHistory onClose={() => setView('dashboard')} />;
-}
+    return <DecisionHistory onClose={() => setView('dashboard')} />;
+  }
 
   // ✅ Dashboard view
   return (
@@ -119,14 +118,11 @@ function App() {
         <h1>AI Train Traffic Control</h1>
         <div className="user-info">
           Logged in as: <strong>{user.username}</strong> ({user.role})
-          
           <button onClick={() => setView('profile')} className="profile-button">Profile</button>
           <button onClick={() => setView('history')} className="history-button">Decision History</button>
           <button onClick={() => setUser(null)} className="logout-button">Logout</button>
         </div>
       </div>
-      
-
 
       <h2>Simulation Time: {simulationState.simulation_time}</h2>
 
@@ -172,6 +168,33 @@ function App() {
                   Explain Why?
                 </button>
               )}
+
+              {/* ✅ Manual Delay Injection */}
+              <div className="delay-box">
+                <input 
+                  type="number" 
+                  min="1" 
+                  placeholder="Delay (min)" 
+                  onChange={(e) => train.delayInput = e.target.value} 
+                  className="delay-input"
+                />
+                <button 
+                  onClick={() => {
+                    const delayMinutes = parseInt(train.delayInput) || 5;
+                    fetch('http://127.0.0.1:5001/api/simulate_delay', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ train_id: train.id, delay: delayMinutes * 60 })
+                    })
+                    .then(res => res.json())
+                    .then(data => alert(data.message))
+                    .catch(err => console.error("Error injecting delay:", err));
+                  }}
+                  className="delay-button"
+                >
+                  Simulate Delay
+                </button>
+              </div>
             </div>
           ))}
         </div>

@@ -1,4 +1,5 @@
 # backend/app.py
+from train_logic import LOOP_LINES  # ✅ add this at top with other imports
 
 import sqlite3
 import threading
@@ -26,7 +27,77 @@ def get_schedules():
     conn = sqlite3.connect(DATABASE_FILE); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
     cursor.execute("SELECT * FROM schedules ORDER BY departure_time_seconds ASC"); rows = cursor.fetchall(); conn.close()
     return jsonify([dict(row) for row in rows])
+@app.route('/api/simulate_delay', methods=['POST'])
+def simulate_delay():
+    global simulation
+    data = request.get_json()
+    train_id = data.get('train_id')
+    delay_seconds = int(data.get('delay', 300))  # default 5 minutes
 
+    if not simulation:
+        return jsonify({"success": False, "message": "Simulation not running."}), 400
+
+    with simulation.lock:
+        train = simulation.trains.get(train_id)
+        if not train:
+            return jsonify({"success": False, "message": "Train not found."}), 404
+
+        # --- Find nearest loop line ahead ---
+        nearest_loop = None
+        for name, pos in sorted(LOOP_LINES.items(), key=lambda x: x[1]):
+            if pos > train.position_km:  # only consider loops ahead of current position
+                nearest_loop = pos
+                break
+
+        if nearest_loop:
+            # Send train to loop (same as AI plan accept)
+            train.status = "EN_ROUTE_TO_LOOP"
+            train.maneuver_target_km = nearest_loop
+            simulation.log_decision(
+                f"DELAY INJECTED: Train {train.name} ordered to nearest loop at {nearest_loop} km for {delay_seconds//60} min."
+            )
+
+            # Schedule resume after delay
+            def resume_train():
+                with simulation.lock:
+                    if train.status in ["HALTED_IN_LOOP", "HALTED"]:
+                        train.status = "ON_SCHEDULE"
+                        train.speed_kmh = train.original_speed
+                        train.maneuver_target_km = None
+                        train.halted_by = None  # ✅ ensure no "blocked by" remains
+                        simulation.log_decision(
+                            f"Train {train.name} resumed after injected delay at loop {nearest_loop} km."
+                    )
+
+
+            threading.Timer(delay_seconds, resume_train).start()
+
+            return jsonify({
+                "success": True,
+                "message": f"Train {train_id} delayed {delay_seconds//60} min at nearest loop ({nearest_loop} km)."
+            })
+        else:
+            # No loop ahead → halt in place (fallback)
+            train.status = "HALTED"
+            train.speed_kmh = 0
+            simulation.log_decision(
+                f"DELAY INJECTED: Train {train.name} halted in place (no loop ahead) for {delay_seconds//60} min."
+            )
+
+            def resume_train():
+                with simulation.lock:
+                    if train.status == "HALTED":
+                        train.status = "ON_SCHEDULE"
+                        train.speed_kmh = train.original_speed
+                        simulation.log_decision(
+                            f"Train {train.name} resumed after injected delay (halted in place)."
+                        )
+
+            threading.Timer(delay_seconds, resume_train).start()
+            return jsonify({
+                "success": True,
+                "message": f"Train {train_id} delayed {delay_seconds//60} min (halted in place, no loop available)."
+            })
 
 @app.route('/api/add_schedule', methods=['POST'])
 def add_schedule():
