@@ -159,8 +159,9 @@ def add_schedule():
     data = request.get_json()
     try:
         conn = sqlite3.connect(DATABASE_FILE); cursor = conn.cursor()
-        cursor.execute("INSERT OR REPLACE INTO schedules (id, name, type, priority, speed, departure_time_seconds) VALUES (?, ?, ?, ?, ?, ?)",
-                       (data['id'], data['name'], data['type'], data['priority'], data['speed'], data['departure_time_seconds']))
+        cursor.execute("INSERT OR REPLACE INTO schedules (id, name, type, priority, speed, departure_time_seconds, start_station, end_station) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                       (data['id'], data['name'], data['type'], data['priority'], data['speed'], data['departure_time_seconds'], data.get('start_station', 'MUMBAI CST'),
+                        data.get('end_station', 'PUNE')))
         conn.commit(); conn.close()
         if simulation:
             simulation.schedule = simulation.load_schedule_from_db()
@@ -324,3 +325,16 @@ if __name__ == '__main__':
     simulation_thread = threading.Thread(target=simulation.update, daemon=True)
     simulation_thread.start()
     app.run(port=5001, debug=True, use_reloader=False)
+    # Run once in backend (e.g., add to init_db() or run manually)
+def migrate_add_start_end_columns():
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    # Add columns if they do not exist (SQLite: adding only if missing; we check PRAGMA)
+    cols = [row[1] for row in cursor.execute("PRAGMA table_info(schedules)").fetchall()]
+    if 'start_station' not in cols:
+        cursor.execute("ALTER TABLE schedules ADD COLUMN start_station TEXT DEFAULT 'MUMBAI CST'")
+    if 'end_station' not in cols:
+        cursor.execute("ALTER TABLE schedules ADD COLUMN end_station TEXT DEFAULT 'PUNE'")
+    conn.commit()
+    conn.close()
+

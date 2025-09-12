@@ -20,12 +20,18 @@ LOOP_LINES = {
 }
 
 def init_db():
-    conn = sqlite3.connect(DATABASE_FILE); cursor = conn.cursor()
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS schedules (
-            id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL,
-            priority INTEGER NOT NULL, speed INTEGER NOT NULL, departure_time_seconds INTEGER NOT NULL
-        )''')
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            priority INTEGER NOT NULL,
+            speed INTEGER NOT NULL,
+            departure_time_seconds INTEGER NOT NULL
+        )
+    ''')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
@@ -33,26 +39,52 @@ def init_db():
             role TEXT NOT NULL
         )
     ''')
-    conn.commit(); conn.close()
+
+    # ✅ Migration: check if start/end columns exist, add them if missing
+    cols = [row[1] for row in cursor.execute("PRAGMA table_info(schedules)").fetchall()]
+    if 'start_station' not in cols:
+        cursor.execute("ALTER TABLE schedules ADD COLUMN start_station TEXT DEFAULT 'MUMBAI CST'")
+    if 'end_station' not in cols:
+        cursor.execute("ALTER TABLE schedules ADD COLUMN end_station TEXT DEFAULT 'PUNE'")
+
+    conn.commit()
+    conn.close()
     print("--- Database initialized successfully. ---")
+
 
 class Train:
     def __init__(self, train_id, name, train_type, priority, speed, start_position=0):
-        self.id = train_id; self.name = name; self.type = train_type; self.priority = priority
-        self.speed_kmh = speed; self.original_speed = speed; self.position_km = float(start_position)
-        self.status = "ON_SCHEDULE"; self.halted_by = None; self.maneuver_target_km = None
-        self.time_in_adaptive_cruise = 0; self.proposed_plan = None
+        self.id = train_id
+        self.name = name
+        self.type = train_type
+        self.priority = priority
+        self.speed_kmh = speed
+        self.original_speed = speed
+        self.position_km = float(start_position)
+        self.status = "ON_SCHEDULE"
+        self.halted_by = None
+        self.maneuver_target_km = None
+        self.time_in_adaptive_cruise = 0
+        self.proposed_plan = None
 
     def move(self, delta_time_hours, simulation_instance):
-        if self.status in ["HALTED", "ARRIVED", "HALTED_IN_LOOP"]: return
+        if self.status in ["HALTED", "ARRIVED", "HALTED_IN_LOOP"]:
+            return
         potential_new_position = self.position_km + (self.speed_kmh * delta_time_hours)
         if self.status == "EN_ROUTE_TO_LOOP" and self.maneuver_target_km is not None:
             if potential_new_position >= self.maneuver_target_km:
-                self.position_km = self.maneuver_target_km; self.status = "HALTED_IN_LOOP"; self.maneuver_target_km = None
-                simulation_instance.log_decision(f"Train {self.name} reached loop line at {self.position_km:.1f} km and halted in loop.")
-                print(f"--- ACTION: Train {self.name} has reached the loop line and is now halting. ---"); return
+                self.position_km = self.maneuver_target_km
+                self.status = "HALTED_IN_LOOP"
+                self.maneuver_target_km = None
+                simulation_instance.log_decision(
+                    f"Train {self.name} reached loop line at {self.position_km:.1f} km and halted in loop."
+                )
+                print(f"--- ACTION: Train {self.name} has reached the loop line and is now halting. ---")
+                return
         if potential_new_position >= ROUTE_LENGTH_KM:
-            self.position_km = ROUTE_LENGTH_KM; self.speed_kmh = 0; self.status = "ARRIVED"
+            self.position_km = ROUTE_LENGTH_KM
+            self.speed_kmh = 0
+            self.status = "ARRIVED"
             simulation_instance.log_decision(f"ARRIVAL: Train {self.name} arrived at destination.")
             print(f"--- [Time {simulation_instance.get_formatted_time()}] ARRIVED: Train {self.name} ---")
         else:
@@ -64,23 +96,43 @@ class Train:
             if s["pos_km"] > self.position_km:
                 dist = s["pos_km"] - self.position_km
                 eta_seconds = int((dist / self.speed_kmh) * 3600) if self.speed_kmh > 0 else None
-                upcoming.append({"name": s["name"], "distance_km": round(dist, 1), "eta_seconds": eta_seconds})
+                upcoming.append({
+                    "name": s["name"],
+                    "distance_km": round(dist, 1),
+                    "eta_seconds": eta_seconds
+                })
         return upcoming
 
     def to_dict(self):
         upcoming = self.get_upcoming_stations()
-        return {"id": self.id, "name": self.name, "type": self.type, "priority": self.priority,
-                "speed_kmh": self.speed_kmh, "position_km": round(self.position_km, 2), "status": self.status,
-                "maneuver_target_km": self.maneuver_target_km, "halted_by": self.halted_by,
-                "proposed_plan": self.proposed_plan, "upcoming_stations": upcoming,
-                "next_station": upcoming[0]["name"] if upcoming else "None",
-                "eta_next_station": upcoming[0]["eta_seconds"] if upcoming else None}
+        return {
+            "id": self.id,
+            "name": self.name,
+            "type": self.type,
+            "priority": self.priority,
+            "speed_kmh": self.speed_kmh,
+            "position_km": round(self.position_km, 2),
+            "status": self.status,
+            "maneuver_target_km": self.maneuver_target_km,
+            "halted_by": self.halted_by,
+            "proposed_plan": self.proposed_plan,
+            "upcoming_stations": upcoming,
+            "next_station": upcoming[0]["name"] if upcoming else "None",
+            "eta_next_station": upcoming[0]["eta_seconds"] if upcoming else None,
+            "start_station": getattr(self, "start_station", None),
+            "end_station": getattr(self, "end_station", None)
+        }
+
 
 class Simulation:
     def __init__(self):
-        self.trains = {}; self.simulation_time_seconds = 0; self.time_scale = 60
-        self.lock = threading.Lock(); self.schedule = self.load_schedule_from_db()
-        self.spawned_train_ids = set(); self.conflicts_handled = set()
+        self.trains = {}
+        self.simulation_time_seconds = 0
+        self.time_scale = 60
+        self.lock = threading.Lock()
+        self.schedule = self.load_schedule_from_db()
+        self.spawned_train_ids = set()
+        self.conflicts_handled = set()
         self.decision_history = []   # store human/AI decisions and important events
 
     def log_decision(self, message):
@@ -89,7 +141,6 @@ class Simulation:
         entry = f"[{time_str}] {message}"
         print(entry)
         self.decision_history.append(entry)
-        # Keep the history bounded (last 200)
         if len(self.decision_history) > 200:
             self.decision_history.pop(0)
 
@@ -98,12 +149,18 @@ class Simulation:
             return list(self.decision_history)
 
     def load_schedule_from_db(self):
-        conn = sqlite3.connect(DATABASE_FILE); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
-        cursor.execute("SELECT * FROM schedules ORDER BY departure_time_seconds ASC"); rows = cursor.fetchall(); conn.close()
+        conn = sqlite3.connect(DATABASE_FILE)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM schedules ORDER BY departure_time_seconds ASC")
+        rows = cursor.fetchall()
+        conn.close()
         return [dict(row) for row in rows]
 
     def resolve_conflict_with_ai(self, behind_train, ahead_train, conflict_id):
-        self.log_decision(f"Critical conflict detected between {behind_train.name} (behind) and {ahead_train.name} (ahead). Requesting AI advice.")
+        self.log_decision(
+            f"Critical conflict detected between {behind_train.name} (behind) and {ahead_train.name} (ahead). Requesting AI advice."
+        )
         prompt = f"""Analyze: High-priority '{behind_train.name}' is critically close to low-priority '{ahead_train.name}'. Loop lines are at: {json.dumps(LOOP_LINES)}. Advise which train should wait. Respond in JSON with "train_id_to_wait"."""
         try:
             response = ollama.chat(model='phi3:latest', messages=[{'role': 'user', 'content': prompt}], format='json')
@@ -112,7 +169,6 @@ class Simulation:
             with self.lock:
                 train_to_wait = self.trains.get(advice.get("train_id_to_wait"))
                 if not train_to_wait or train_to_wait.id != ahead_train.id:
-                    # AI returned something unexpected; override to ahead_train (safer default)
                     self.log_decision("AI provided illogical or unexpected advice; overriding and selecting ahead-train as waiter.")
                     print(f"--- AI provided illogical advice. Overriding. ---")
                     train_to_wait = ahead_train
@@ -123,20 +179,36 @@ class Simulation:
                     time_waiter = (best_loop_pos - train_to_wait.position_km) / train_to_wait.speed_kmh if train_to_wait.speed_kmh > 0 else float('inf')
                     time_passer = (best_loop_pos - behind_train.position_km) / behind_train.speed_kmh if behind_train.speed_kmh > 0 else float('inf')
                     if time_waiter < time_passer:
-                        plan = {"action": "MOVE_TO_LOOP_AND_HALT", "train_id": train_to_wait.id, "location_km": best_loop_pos, "caused_by": behind_train.id}
+                        plan = {
+                            "action": "MOVE_TO_LOOP_AND_HALT",
+                            "train_id": train_to_wait.id,
+                            "location_km": best_loop_pos,
+                            "caused_by": behind_train.id
+                        }
                         self.log_decision(f"AI proposed: Route {train_to_wait.name} to loop at {best_loop_pos:.1f} km to let {behind_train.name} pass.")
                         print(f"--- Proposing a SAFE plan: Route {train_to_wait.name} to loop at {best_loop_pos}km. ---")
                     else:
-                        plan = {"action": "HALT", "train_id": train_to_wait.id, "reason": "Maneuver unsafe", "caused_by": behind_train.id}
+                        plan = {
+                            "action": "HALT",
+                            "train_id": train_to_wait.id,
+                            "reason": "Maneuver unsafe",
+                            "caused_by": behind_train.id
+                        }
                         self.log_decision(f"AI fallback proposed immediate HALT for {train_to_wait.name} because maneuver unsafe.")
                         print(f"--- Proposing an UNSAFE fallback: HALT {train_to_wait.name} NOW. ---")
                 else:
-                    plan = {"action": "HALT", "train_id": train_to_wait.id, "reason": "No loop lines ahead", "caused_by": behind_train.id}
+                    plan = {
+                        "action": "HALT",
+                        "train_id": train_to_wait.id,
+                        "reason": "No loop lines ahead",
+                        "caused_by": behind_train.id
+                    }
                     self.log_decision(f"AI fallback proposed HALT for {train_to_wait.name}: no loop lines ahead.")
                     print(f"--- No loop lines ahead. Proposing fallback: HALT {train_to_wait.name} NOW. ---")
 
                 train_to_wait.proposed_plan = plan
                 train_to_wait.status = "AWAITING_DECISION"
+                train_to_wait.halted_by = plan.get("caused_by")   # ✅ ensure explain works
         except Exception as e:
             error_msg = f"ERROR in AI resolution: {e}"
             print(f"!!! {error_msg} !!!")
@@ -152,19 +224,24 @@ class Simulation:
                 if halting_train and halting_train.position_km > train.position_km + 5:
                     self.log_decision(f"CONFLICT RESOLVED: Restarting {train.name} after {halting_train.name} moved clear.")
                     print(f"--- CONFLICT RESOLVED: Restarting train {train.name}. ---")
-                    train.status = "ON_SCHEDULE"; train.speed_kmh = train.original_speed; train.halted_by = None
+                    train.status = "ON_SCHEDULE"
+                    train.speed_kmh = train.original_speed
+                    train.halted_by = None
                     train.maneuver_target_km = train.position_km
                     conflict_id = f"{halting_train.id}-{train.id}"
-                    if conflict_id in self.conflicts_handled: self.conflicts_handled.remove(conflict_id)
+                    if conflict_id in self.conflicts_handled:
+                        self.conflicts_handled.remove(conflict_id)
 
     def detect_conflicts(self):
         train_list = list(self.trains.values())
         currently_cruising_trains = set()
         for i in range(len(train_list)):
             for j in range(len(train_list)):
-                if i == j: continue
+                if i == j:
+                    continue
                 train_a, train_b = train_list[i], train_list[j]
-                if train_a.status not in ["ON_SCHEDULE", "ADAPTIVE_CRUISE"] or train_b.status not in ["ON_SCHEDULE", "ADAPTIVE_CRUISE"]: continue
+                if train_a.status not in ["ON_SCHEDULE", "ADAPTIVE_CRUISE"] or train_b.status not in ["ON_SCHEDULE", "ADAPTIVE_CRUISE"]:
+                    continue
                 ahead_train, behind_train = (train_a, train_b) if train_a.position_km > train_b.position_km else (train_b, train_a)
                 if behind_train.original_speed > ahead_train.speed_kmh:
                     distance = ahead_train.position_km - behind_train.position_km
@@ -174,7 +251,10 @@ class Simulation:
                         conflict_id = f"{behind_train.id}-{ahead_train.id}"
                         if conflict_id not in self.conflicts_handled:
                             self.conflicts_handled.add(conflict_id)
-                            ai_thread = threading.Thread(target=self.resolve_conflict_with_ai, args=(behind_train, ahead_train, conflict_id))
+                            ai_thread = threading.Thread(
+                                target=self.resolve_conflict_with_ai,
+                                args=(behind_train, ahead_train, conflict_id)
+                            )
                             ai_thread.start()
                         currently_cruising_trains.add(behind_train.id)
                     elif 15 > distance > 5:
@@ -188,42 +268,72 @@ class Simulation:
             if train.status == "ADAPTIVE_CRUISE" and train.id not in currently_cruising_trains:
                 self.log_decision(f"{train.name} disengaging ADAPTIVE_CRUISE; resuming scheduled speed.")
                 print(f"--- ACTION: {train.name} disengaging adaptive cruise. ---")
-                train.status = "ON_SCHEDULE"; train.speed_kmh = train.original_speed
+                train.status = "ON_SCHEDULE"
+                train.speed_kmh = train.original_speed
 
     def spawn_trains(self):
+        # reload schedule so new entries appear
         self.schedule = self.load_schedule_from_db()
+        station_to_km = {s["name"]: s["pos_km"] for s in STATIONS}
+
         for train_data in self.schedule:
             if train_data["id"] not in self.trains and self.simulation_time_seconds >= train_data["departure_time_seconds"]:
+                start_station = train_data.get("start_station") or STATIONS[0]["name"]
+                start_pos = station_to_km.get(start_station, 0.0)
+
                 new_train = Train(
-                    train_id=train_data["id"], name=train_data["name"], train_type=train_data["type"],
-                    priority=train_data["priority"], speed=train_data["speed"]
+                    train_id=train_data["id"],
+                    name=train_data["name"],
+                    train_type=train_data["type"],
+                    priority=train_data["priority"],
+                    speed=train_data["speed"],
+                    start_position=start_pos
                 )
+
+                new_train.end_station = train_data.get("end_station", STATIONS[-1]["name"])
                 self.trains[train_data["id"]] = new_train
-                self.log_decision(f"SPAWNED: Train {new_train.name} (id: {new_train.id}) at position {new_train.position_km:.1f} km.")
-                print(f"--- [Time {self.get_formatted_time()}] SPAWNED: Train {new_train.name} ---")
+                self.log_decision(
+                    f"SPAWNED: Train {new_train.name} (id: {new_train.id}) at start {start_station} ({start_pos:.1f} km)."
+                )
+                print(f"--- [Time {self.get_formatted_time()}] SPAWNED: Train {new_train.name} at {start_pos:.1f} km ---")
 
     def update(self):
         while True:
             with self.lock:
-                delta_t = 1 * self.time_scale / 3600.0; self.simulation_time_seconds += (1 * self.time_scale)
-                self.spawn_trains();
-                for train in self.trains.values(): train.move(delta_t, self)
+                delta_t = 1 * self.time_scale / 3600.0
+                self.simulation_time_seconds += (1 * self.time_scale)
+                self.spawn_trains()
                 for train in self.trains.values():
-                    if train.status == "ADAPTIVE_CRUISE": train.time_in_adaptive_cruise += (1 * self.time_scale)
-                    else: train.time_in_adaptive_cruise = 0
-                self.check_for_resolved_conflicts(); self.detect_conflicts(); print(self.get_state_string())
+                    train.move(delta_t, self)
+                for train in self.trains.values():
+                    if train.status == "ADAPTIVE_CRUISE":
+                        train.time_in_adaptive_cruise += (1 * self.time_scale)
+                    else:
+                        train.time_in_adaptive_cruise = 0
+                self.check_for_resolved_conflicts()
+                self.detect_conflicts()
+                print(self.get_state_string())
             time.sleep(1)
 
     def get_formatted_time(self):
-        secs=int(self.simulation_time_seconds); mins,secs=divmod(secs,60); hours,mins=divmod(mins,60); return f"{hours:02d}:{mins:02d}:{secs:02d}"
+        secs = int(self.simulation_time_seconds)
+        mins, secs = divmod(secs, 60)
+        hours, mins = divmod(mins, 60)
+        return f"{hours:02d}:{mins:02d}:{secs:02d}"
 
     def get_state_string(self):
-        time_str=self.get_formatted_time(); state_str=f"--- Simulation Time: {time_str} ---"
-        if not self.trains: state_str += "\nNo trains currently on the track."
+        time_str = self.get_formatted_time()
+        state_str = f"--- Simulation Time: {time_str} ---"
+        if not self.trains:
+            state_str += "\nNo trains currently on the track."
         else:
             for train in self.trains.values():
                 state_str += f"\n  > {train.name} ({train.id}): Pos={train.position_km:.2f} km, Status={train.status}"
         return state_str
 
     def get_simulation_state_for_api(self):
-        with self.lock: return {"simulation_time": self.get_formatted_time(), "trains": [train.to_dict() for train in self.trains.values()]}
+        with self.lock:
+            return {
+                "simulation_time": self.get_formatted_time(),
+                "trains": [train.to_dict() for train in self.trains.values()]
+            }

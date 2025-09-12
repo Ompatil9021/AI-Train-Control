@@ -383,3 +383,95 @@ h1 {
 .delay-button:hover {
   background: #e68900;
 }
+/* Timetable Editor Container */
+.timetable-editor {
+  margin: 20px auto;
+  padding: 20px;
+  max-width: 700px;
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  box-shadow: 0px 3px 6px rgba(0,0,0,0.1);
+}
+
+.timetable-editor h3 {
+  margin-bottom: 15px;
+  text-align: center;
+  color: #333;
+}
+
+/* Form layout */
+.timetable-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 20px;
+  margin-bottom: 20px;
+}
+
+.timetable-form input,
+.timetable-form select {
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.timetable-form label {
+  font-weight: bold;
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+  color: #444;
+}
+
+.timetable-form button {
+  grid-column: span 2;
+  padding: 10px;
+  background-color: #0078d7;
+  color: white;
+  font-weight: bold;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.timetable-form button:hover {
+  background-color: #005bb5;
+}
+
+/* Schedule List */
+.schedule-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.schedule-list li {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 10px 15px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.schedule-list li strong {
+  color: #0078d7;
+}
+
+.schedule-list button {
+  padding: 5px 10px;
+  background: #d9534f;
+  border: none;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.schedule-list button:hover {
+  background: #b52b27;
+}
