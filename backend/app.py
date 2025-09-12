@@ -47,6 +47,50 @@ def delete_schedule(train_id):
         return jsonify({"success": True, "message": f"Schedule for train {train_id} deleted."})
     except Exception as e: return jsonify({"success": False, "message": str(e)}), 400
 
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    role = data.get('role')
+
+    if not username or not password or not role:
+        return jsonify({"success": False, "message": "Missing required fields."}), 400
+
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", (username, password, role))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"success": False, "message": "Username already exists."}), 409
+    
+    conn.close()
+    return jsonify({"success": True, "message": "User registered successfully."}), 201
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    conn = sqlite3.connect(DATABASE_FILE)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if user and user['password'] == password:
+        return jsonify({
+            "success": True, 
+            "message": "Login successful.",
+            "user": {"username": user['username'], "role": user['role']}
+        })
+    else:
+        return jsonify({"success": False, "message": "Invalid username or password."}), 401
+
 @app.route('/api/explain', methods=['POST'])
 def get_explanation():
     try:

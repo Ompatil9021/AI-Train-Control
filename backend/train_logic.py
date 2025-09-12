@@ -26,6 +26,13 @@ def init_db():
             id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL,
             priority INTEGER NOT NULL, speed INTEGER NOT NULL, departure_time_seconds INTEGER NOT NULL
         )''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL
+        )
+    ''')
     conn.commit(); conn.close()
     print("--- Database initialized successfully. ---")
 
