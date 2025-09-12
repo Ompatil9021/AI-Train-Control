@@ -1,0 +1,56 @@
+.header-bar {
+  background: #7a98ea; /* dark blue */
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Left side: title + buttons */
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.header-bar h1 {
+  font-size: 20px;
+  font-weight: bold;
+  margin: 0;
+}
+
+.header-actions button {
+  margin-right: 8px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #3b82f6;
+  color: white;
+  transition: background 0.3s;
+}
+
+.header-actions button:hover {
+  background: #8ca8e3;
+}
+
+/* Right side: user circle */
+.header-right {
+  display: flex;
+  align-items: center;
+}
+
+.user-circle {
+  width: 36px;
+  height: 36px;
+  background: #f59e0b; /* amber */
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 16px;
+  color: white;
+}

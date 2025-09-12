@@ -1,4 +1,18 @@
 /* frontend/src/App.css */
+/* Generic Card Style */
+.card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  padding: 16px;
+  margin: 10px 0;
+}
+
+/* Headings */
+h1, h2, h3, h4 {
+  font-weight: 600;
+  color: #1e3a8a; /* dark blue accent */
+}
 
 body {
   /* This prevents the horizontal scrollbar */
@@ -474,4 +488,35 @@ h1 {
 
 .schedule-list button:hover {
   background: #b52b27;
+}
+/* Train Dashboard */
+.dashboard {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+/* Train Card */
+.train-card {
+  border-radius: 8px;
+  padding: 12px;
+  margin: 8px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+  transition: transform 0.2s ease;
+}
+
+.train-card:hover {
+  transform: translateY(-2px);
+}
+
+/* EXPRESS trains → green accent */
+.train-card.type-EXPRESS {
+  border-left: 5px solid #10b981;
+}
+
+/* GOODS trains → amber accent */
+.train-card.type-GOODS {
+  border-left: 5px solid #f59e0b;
 }

@@ -6,6 +6,8 @@ import TimetableEditor from './components/TimetableEditor';
 import AuthPage from './components/AuthPage';
 import ProfilePage from './components/ProfilePage';
 import './App.css';
+import Header from './components/Header';
+import Footer from './components/Footer';
 
 const getTrainIcon = (trainType) => {
   switch (trainType) {
@@ -20,7 +22,7 @@ function App() {
   const [view, setView] = useState('dashboard'); // 'dashboard' | 'profile' | 'history'
   const [simulationState, setSimulationState] = useState({ trains: [], simulation_time: "00:00:00" });
 
-  // NEW: store delay input values per-train in React state (prevents race with simulationState refresh)
+  // NEW: store delay input values per-train in React state
   const [delayInputs, setDelayInputs] = useState({}); // { [trainId]: "2" }
 
   // Fetch simulation state only if a user is logged in
@@ -46,12 +48,12 @@ function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ahead_train: haltedTrain, behind_train: causingTrain }),
     })
-    .then(response => response.json())
-    .then(data => {
-      if (data.explanation) { alert(data.explanation); }
-      else { alert("Sorry, could not get an explanation from the AI."); }
-    })
-    .catch(error => console.error("Error fetching explanation:", error));
+      .then(response => response.json())
+      .then(data => {
+        if (data.explanation) { alert(data.explanation); }
+        else { alert("Sorry, could not get an explanation from the AI."); }
+      })
+      .catch(error => console.error("Error fetching explanation:", error));
   };
 
   const handleDecision = (trainId, decision) => {
@@ -60,7 +62,7 @@ function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ train_id: trainId, decision: decision }),
     })
-    .catch(error => console.error("Error sending decision:", error));
+      .catch(error => console.error("Error sending decision:", error));
   };
 
   const getTrainPosition = (train) => {
@@ -102,7 +104,6 @@ function App() {
     return `${mins}m ${secs < 10 ? '0' : ''}${secs}s`;
   };
 
-  // helper to update delayInputs map
   const setDelayForTrain = (trainId, value) => {
     setDelayInputs(prev => ({ ...prev, [trainId]: value }));
   };
@@ -119,103 +120,103 @@ function App() {
     return <DecisionHistory onClose={() => setView('dashboard')} />;
   }
 
-  // ✅ Dashboard view
+  // ✅ Dashboard view with Header + Footer
   return (
-    <div className="App">
-      <div className="header">
-        <h1>AI Train Traffic Control</h1>
-        <div className="user-info">
-          Logged in as: <strong>{user.username}</strong> ({user.role})
-          <button onClick={() => setView('profile')} className="profile-button">Profile</button>
-          <button onClick={() => setView('history')} className="history-button">Decision History</button>
-          <button onClick={() => setUser(null)} className="logout-button">Logout</button>
-        </div>
-      </div>
+    <>
+      <Header
+        user={user}
+        onProfile={() => setView('profile')}
+        onHistory={() => setView('history')}
+        onLogout={() => setUser(null)}
+      />
 
-      <h2>Simulation Time: {simulationState.simulation_time}</h2>
+      <div className="App">
+        <h2>Simulation Time: {simulationState.simulation_time}</h2>
 
-      <div className="dashboard">
-        <TrainMap />
-        {simulationState.trains.map(train => (
-          <div 
-            key={train.id}
-            className="train-icon"
-            style={getTrainPosition(train)}
-            title={`${train.name} (${train.id}) - Status: ${train.status}`}
-          >
-            {getTrainIcon(train.type)}
-            <div className="train-label">{train.id}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="train-list-container">
-        <h3>Live Train Status</h3>
-        <div className="train-cards-grid">
+        <div className="dashboard">
+          <TrainMap />
           {simulationState.trains.map(train => (
-            <div key={train.id} className={`train-card type-${train.type} status-${train.status}`}>
-              <h4>{getTrainIcon(train.type)} {train.name} ({train.id})</h4>
-              <p><strong>Status:</strong> {train.status.replace(/_/g, ' ')}</p>
-
-              {train.status === 'AWAITING_DECISION' && train.proposed_plan ? (
-                <div className="decision-box">
-                  <p><strong>AI Proposal:</strong> {train.proposed_plan.action.replace(/_/g, ' ')} at {train.proposed_plan.location_km}km</p>
-                  <button onClick={() => handleDecision(train.id, 'accept')} className="accept-button">Accept</button>
-                  <button onClick={() => handleDecision(train.id, 'reject')} className="reject-button">Reject</button>
-                </div>
-              ) : (
-                <>
-                  <p><strong>Speed:</strong> {train.speed_kmh} km/h</p>
-                  <p><strong>Next Station:</strong> {train.next_station}</p>
-                  <p><strong>ETA:</strong> {formatEta(train.eta_next_station)}</p>
-                </>
-              )}
-
-              {(train.status === 'HALTED' || train.status === 'HALTED_IN_LOOP') && (
-                <button onClick={() => handleExplainClick(train)} className="explain-button">
-                  Explain Why?
-                </button>
-              )}
-
-              {/* ✅ Manual Delay Injection */}
-              <div className="delay-box">
-                <input 
-                  type="number" 
-                  min="1" 
-                  placeholder="Delay (min)" 
-                  value={delayInputs[train.id] || ''} 
-                  onChange={(e) => setDelayForTrain(train.id, e.target.value)} 
-                  className="delay-input"
-                />
-                <button 
-                  onClick={() => {
-                    const delayMinutes = parseInt(delayInputs[train.id]) || 5;
-                    // Send minutes converted to seconds
-                    const delaySeconds = delayMinutes * 60;
-                    fetch('http://127.0.0.1:5001/api/simulate_delay', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ train_id: train.id, delay: delaySeconds })
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                      if (data && data.message) alert(data.message);
-                      else alert('Delay injected.');
-                    })
-                    .catch(err => console.error("Error injecting delay:", err));
-                  }}
-                  className="delay-button"
-                >
-                  Simulate Delay
-                </button>
-              </div>
+            <div
+              key={train.id}
+              className="train-icon"
+              style={getTrainPosition(train)}
+              title={`${train.name} (${train.id}) - Status: ${train.status}`}
+            >
+              {getTrainIcon(train.type)}
+              <div className="train-label">{train.id}</div>
             </div>
           ))}
         </div>
+
+        <div className="train-list-container">
+          <h3>Live Train Status</h3>
+          <div className="train-cards-grid">
+            {simulationState.trains.map(train => (
+              <div key={train.id} className={`train-card type-${train.type} status-${train.status}`}>
+                <h4>{getTrainIcon(train.type)} {train.name} ({train.id})</h4>
+                <p><strong>Status:</strong> {train.status.replace(/_/g, ' ')}</p>
+
+                {train.status === 'AWAITING_DECISION' && train.proposed_plan ? (
+                  <div className="decision-box">
+                    <p><strong>AI Proposal:</strong> {train.proposed_plan.action.replace(/_/g, ' ')} at {train.proposed_plan.location_km}km</p>
+                    <button onClick={() => handleDecision(train.id, 'accept')} className="accept-button">Accept</button>
+                    <button onClick={() => handleDecision(train.id, 'reject')} className="reject-button">Reject</button>
+                  </div>
+                ) : (
+                  <>
+                    <p><strong>Speed:</strong> {train.speed_kmh} km/h</p>
+                    <p><strong>Next Station:</strong> {train.next_station}</p>
+                    <p><strong>ETA:</strong> {formatEta(train.eta_next_station)}</p>
+                  </>
+                )}
+
+                {(train.status === 'HALTED' || train.status === 'HALTED_IN_LOOP') && (
+                  <button onClick={() => handleExplainClick(train)} className="explain-button">
+                    Explain Why?
+                  </button>
+                )}
+
+                {/* ✅ Manual Delay Injection */}
+                <div className="delay-box">
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Delay (min)"
+                    value={delayInputs[train.id] || ''}
+                    onChange={(e) => setDelayForTrain(train.id, e.target.value)}
+                    className="delay-input"
+                  />
+                  <button
+                    onClick={() => {
+                      const delayMinutes = parseInt(delayInputs[train.id]) || 5;
+                      const delaySeconds = delayMinutes * 60;
+                      fetch('http://127.0.0.1:5001/api/simulate_delay', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ train_id: train.id, delay: delaySeconds })
+                      })
+                        .then(res => res.json())
+                        .then(data => {
+                          if (data && data.message) alert(data.message);
+                          else alert('Delay injected.');
+                        })
+                        .catch(err => console.error("Error injecting delay:", err));
+                    }}
+                    className="delay-button"
+                  >
+                    Simulate Delay
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {user && user.role === 'admin' && <TimetableEditor />}
       </div>
 
-      {user && user.role === 'admin' && <TimetableEditor />}
-    </div>
+      <Footer />
+    </>
   );
 }
 
