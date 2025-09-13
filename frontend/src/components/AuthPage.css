@@ -1,0 +1,150 @@
+.auth-background {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Glass card */
+.auth-card {
+  width: 500px;
+  max-width: 95%;
+  background: rgba(8, 12, 20, 0.75);  /* dark glass */
+  backdrop-filter: blur(10px);
+  border-radius: 14px;
+  padding: 30px;
+  color: rgb(42, 31, 31);
+  text-align: center;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+}
+
+/* Title + subtitle */
+.auth-title {
+  font-size: 24px;
+  font-weight: 800;
+  margin-bottom: 8px;
+  color: rgba(255, 255, 255, 0.98);   /* almost pure white */
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6); /* glow for visibility */
+}
+
+.auth-subtitle {
+  font-size: 15px;
+  font-weight: 500;
+  margin-bottom: 20px;
+  color: rgba(255, 255, 255, 0.92);   /* brighter opacity */
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5); /* subtle shadow */
+}
+
+/* Divider */
+.auth-divider {
+  height: 3px;
+  width: 60px;
+  margin: 0 auto 20px;
+  border-radius: 3px;
+  background: #f59e0b;
+}
+
+/* Input groups */
+.input-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.08);   /* subtle dark background */
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  transition: border 0.3s, background 0.3s;
+}
+.input-group:hover {
+  border-color: #f59e0b;
+  background: rgba(255, 255, 255, 0.12);
+}
+.input-group .icon {
+  color: #fbbf24;
+  font-size: 16px;
+}
+.input-group input {
+  flex: 1;
+  background: transparent !important;   /* remove white fill */
+  border: none !important;
+  outline: none !important;
+  color: #ffffff !important;            /* typed text is white */
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  caret-color: #e03c30;                 /* orange blinking cursor */
+}
+.input-group input::placeholder {
+  color: rgba(255, 255, 255, 0.55);     /* gray placeholder */
+}
+.input-group input:focus {
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.8);
+  border-radius: 6px;
+}
+
+/* Fix Chrome autofill white background */
+input:-webkit-autofill,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px rgba(255,255,255,0) inset !important;
+  -webkit-text-fill-color: #301919 !important;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* Error */
+.error-box {
+  background: rgba(255, 0, 0, 0.2);
+  color: #ab1313;
+  padding: 8px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+/* Button */
+.auth-button {
+  width: 100%;
+  background: #f59e0b;
+  color: #111827;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  font-size: 15px;
+  margin-top: 4px;
+  transition: background 0.3s, transform 0.2s;
+}
+.auth-button:hover {
+  background: #fbbf24;
+  transform: scale(1.02);
+}
+.auth-form {
+  background: transparent !important;   /* ⬅ kills white box */
+  padding: 0;
+  margin: 0;
+  box-shadow: none !important;
+}
+
+/* Links */
+.auth-links {
+  margin-top: 15px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+}
+.auth-links a {
+  display: block;
+  margin-bottom: 8px;
+  color: #cbd5e1;
+}
+.toggle-link {
+  color: #f59e0b;
+  cursor: pointer;
+  font-weight: 500;
+}
+.toggle-link:hover {
+  text-decoration: underline;
+}
